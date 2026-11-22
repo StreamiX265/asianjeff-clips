@@ -32,9 +32,9 @@ for spec in [c for c in allc if c["id"] in ids]:
     if not ok:
         subprocess.run(["python3", os.path.join(os.path.dirname(__file__), "fetch.py"), p["dir"], str(need_lo - 1), str(need_hi + 1), raw], check=True)
     lo = float(open(raw + ".base").read())
-    def seg(a, b, i):
-        return (f"[0:v]trim={a-lo:.3f}:{b-lo:.3f},setpts=PTS-STARTPTS,fps=30[v{i}];"
-                f"[0:a]atrim={a-lo:.3f}:{b-lo:.3f},asetpts=PTS-STARTPTS[a{i}];")
+    def seg(a, b, i):   # each segment is its own seeked input, so far-apart hooks don't buffer the gap in RAM
+        return f"[{i}:v]setpts=PTS-STARTPTS,fps=30[v{i}];[{i}:a]asetpts=PTS-STARTPTS[a{i}];"
+    ins = ["-ss", f"{hs-lo:.3f}", "-t", f"{he-hs:.3f}", "-i", raw, "-ss", f"{s-lo:.3f}", "-t", f"{e-s:.3f}", "-i", raw]
     if full:
         v = f"[cv]crop=608:1080:{spec.get('fx', 656)}:0,scale=1080:1920:flags=lanczos,format=yuv420p[v];"
     else:
@@ -45,7 +45,7 @@ for spec in [c for c in allc if c["id"] in ids]:
              "[cam][game]vstack,format=yuv420p[v];")
     fc = seg(hs, he, 0) + seg(s, e, 1) + "[v0][a0][v1][a1]concat=n=2:v=1:a=1[cv][ca];" + v + "[ca]loudnorm=I=-14:TP=-1.5:LRA=11[a]"
     stack = os.path.join(tmp, "stack.mp4")
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", raw, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
+    subprocess.run(["ffmpeg", "-v", "error", "-y", *ins, "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
                     "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", stack], check=True)
     # captions are transcribed from the finished clip's own audio, so timing matches exactly
     model = model or whisper.load_model(p["whisper_model"], download_root=p["models"])
